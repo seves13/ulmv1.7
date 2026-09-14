@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Abfahrtsmonitor Ulm Rathaus</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    background-color: #121212;
+    color: #ffffff;
+    padding: 15px;
+  }
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: #A00000; /* Dunkleres Rot */
+    padding: 12px 20px;
+    border-radius: 8px;
+    margin-bottom: 15px;
+  }
+  .header h1 { 
+    font-size: 22px; 
+    color: #fff; 
+    display: flex; 
+    align-items: center; 
+  }
+  /* Abstand zwischen H-Zeichen und Text */
+  .header h1 svg {
+    margin-right: 12px;
+  }
+  .header .clock { font-size: 22px; font-weight: bold; color: #ffffff; }
+  
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #1e1e1e;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  th {
+    background-color: #333;
+    color: #ffffff;
+    text-align: left;
+    padding: 12px 15px;
+    font-size: 16px;
+  }
+  td {
+    padding: 12px 15px;
+    border-bottom: 1px solid #2a2a2a;
+    font-size: 18px;
+  }
+  tr:nth-child(even) { background-color: #181818; }
+
+  /* Lila runder Badge nach Vorlage */
+  .line-badge {
+    background-color: #8E24AA; /* Lila */
+    color: #ffffff;            /* Weiße Schrift */
+    font-weight: bold;
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    width: 45px;
+    height: 45px;
+    border-radius: 50%;         /* Runde Form */
+    text-align: center;
+    font-size: 16px;
+  }
+  .destination { font-weight: bold; }
+  .via { font-size: 13px; color: #aaa; margin-top: 3px; }
+  
+  /* Abfahrtszeiten in Weiß */
+  .countdown { font-weight: bold; color: #ffffff; text-align: right; }
+  .time-absolute { font-size: 12px; color: #cccccc; text-align: right; }
+  .no-data { text-align: center; padding: 30px; color: #aaa; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>
+    <!-- H-Symbol -->
+    <svg width="32" height="32" viewBox="0 0 100 100">
+      <circle cx="50" cy="50" r="48" fill="#FFCC00" />
+      <circle cx="50" cy="50" r="42" fill="#008D4C" />
+      <circle cx="50" cy="50" r="28" fill="#FFCC00" />
+      <path d="M 36,22 H 44 V 44 H 56 V 22 H 64 V 78 H 56 V 54 H 44 V 78 H 36 Z" fill="#008D4C" />
+    </svg>
+    Ulm (Lichtenau) Rathaus
+  </h1>
+  <div class="clock" id="clock">--:--:--</div>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width: 18%;">Linie</th>
+      <th style="width: 57%;">Richtung / Via</th>
+      <th style="width: 25%; text-align: right;">Abfahrt</th>
+    </tr>
+  </thead>
+  <tbody id="departure-table">
+    <tr><td colspan="3" class="no-data">Lade Fahrplan...</td></tr>
+  </tbody>
+</table>
+
+<script>
+function zeroPad(num) {
+    return (num < 10 ? '0' : '') + num;
+}
+
+// \uFE0E verhindert die Emoji-Umwandlung auf Android/Mobilgeräten
+var VIA_X34_RASTATT = "Stollhofen Krone – Söllingen Kirche – Airpark Verwaltung – Airpark Terminal (FKB) &#9992;&#65038 – Airpark Eisstadion – Hügelsheim Grüner Baum – Iffezheim Einkaufszentrum – Rastatt Stadtpark – Kapellenstraße – Rastatt Bahnhof";
+var VIA_X34_BUEHL = "Moos Weiherstraße – Balzhofen Kirche – Oberweier Alte Schule – Kapellenstraße – Bühl Rheintalstraße – Bühl Bahnhof/ZOB";
+
+var VIA_268_FREISTETT_0519 = "Lichtenau Schwanen – Sommerfeldstraße – Scherheim Blume – Helmlingen Ratz – Memprechtshofen B36 – Freistett Busbahnhof";
+var VIA_268_FREISTETT_0544 = "Lichtenau Schwanen – Sommerfeldstraße – Scherzheim Blume – Helmlingen Ratz – Molkerei – Dorfstraße – Muckenschopf – Memprechtshofen B36 – Freistett Busbahnhof";
+var VIA_268_FREISTETT_0708_0745 = "Lichtenau Schwanen – Sommerfeldstraße – Grauelsbaum Salmen – Birkenweiher – Scherzheim Blume – Helmlingen Ratz – Molkerei – Dorfstraße – Muckenschopf – Memprechtshofen B36 – Freistett Busbahnhof – Seniorenzentrum – Rheinbischofsheim Gymnasium";
+var VIA_268_FREISTETT_STANDARD = "Lichtenau Schwanen – Sommerfeldstraße – Grauelsbaum Salmen – Birkenweiher – Scherzheim Blume – Helmlingen Ratz – Molkerei – Dorfstraße – Muckenschopf – Memprechtshofen B36 – Freistett Busbahnhof";
+var VIA_268_LICHTENAU_SOMMERFELD = "Lichtenau Schwanen – Lichtenau Sommerfeldstraße";
+
+var VIA_268_BUEHL_STANDARD = "Schwarzach Bahnhof – Hildmannsfeld Denkmal – Oberbruch Seestraße – Böschstraße – Vimbuch Apotheke – Rathaus – Oberhof – Bühl Industriegebiet – Rheinstraße – Rathaus – Bühl Bahnhof/ZOB";
+var VIA_268_BUEHL_0703 = "Ulm Zinken – Moos Mooser Straße – Oberbruch Seestraße – Böschstraße – Vimbuch Apotheke – Rathaus – Oberhof – Bühl Industriegebiet – Bahnhof/ZOB – Gymnasium – Rheintalschule – Kappelwindeck Bachschlosschule";
+
+var VIA_268S_0635 = "Ulm Zinken – Moos Weiherstraße – Balzhofen Kirche – Hauptfeld – Oberweier Alte Schule – Kappelenstraße – Bühl Rheintalstraße – Industriegebiet – Rheinstraße – Rathaus – Bühl Bahnhof ZOB";
+var VIA_268S_0705 = "Ulm Zinken – Moos Weiherstraße – Balzhofen Kirche – Hauptfeld – Oberweier Alte Schule – Kappelenstraße – Bühl Rheintalstraße – Industriegebiet – Rheinstraße – Rathaus – ZOB/Bahnhof – Bühl Gymnasium";
+var VIA_268S_1150 = "Lichtenau Schwanen – Schule – Sommerfeldstraße – Grauelsbaum Salmen – Birkenweiher – Scherzheim Blume – Schule – Muckenschopf";
+var VIA_268S_1224_1334 = "Lichtenau Schwanen – Sommerfeldstraße – Grauelsbaum Salmen – Birkenweiher – Scherzheim Blume – Muckenschopf";
+
+var timetable = [
+    // --- MONTAG BIS FREITAG ---
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "04:52", tage: "Mo-Fr" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "06:00", tage: "Mo-Fr" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "07:05", tage: "Mo-Fr" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "08:10", tage: "Mo-Fr" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "09:10", tage: "Mo-Fr" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "10:10", tage: "Mo-Fr" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "11:10", tage: "Mo-Fr" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "12:10", tage: "Mo-Fr" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "13:10", tage: "Mo-Fr" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "14:10", tage: "Mo-Fr" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "15:10", tage: "Mo-Fr" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "16:10", tage: "Mo-Fr" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "17:10", tage: "Mo-Fr" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "18:10", tage: "Mo-Fr" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "19:10", tage: "Mo-Fr" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "20:10", tage: "Mo-Fr" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "21:10", tage: "Mo-Fr" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "22:10", tage: "Mo-Fr" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "23:12", tage: "Mo-Fr" },
+
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "04:33", tage: "Mo-Fr" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "05:30", tage: "Mo-Fr" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "06:42", tage: "Mo-Fr" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "07:42", tage: "Mo-Fr" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "08:42", tage: "Mo-Fr" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "09:42", tage: "Mo-Fr" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "10:42", tage: "Mo-Fr" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "11:42", tage: "Mo-Fr" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "12:42", tage: "Mo-Fr" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "13:42", tage: "Mo-Fr" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "14:42", tage: "Mo-Fr" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "15:42", tage: "Mo-Fr" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "16:42", tage: "Mo-Fr" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "17:42", tage: "Mo-Fr" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "18:42", tage: "Mo-Fr" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "19:42", tage: "Mo-Fr" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "20:42", tage: "Mo-Fr" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "21:42", tage: "Mo-Fr" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "22:42", tage: "Mo-Fr" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "23:42", tage: "Mo-Fr" },
+
+    { line: "268", dest: "Bühl Bahnhof/ZOB", via: VIA_268_BUEHL_STANDARD, time: "05:54", tage: "Mo-Fr" },
+    { line: "268", dest: "Schwarzach Bahnhof", time: "06:58", tage: "Mo-Fr" },
+    { line: "268", dest: "Kappelwindeck Bachschlosschule", via: VIA_268_BUEHL_0703, time: "07:03", tage: "Mo-Fr" },
+    { line: "268", dest: "Bühl Bahnhof/ZOB", via: VIA_268_BUEHL_STANDARD, time: "08:05", tage: "Mo-Fr" },
+    { line: "268", dest: "Bühl Bahnhof/ZOB", via: VIA_268_BUEHL_STANDARD, time: "08:45", tage: "Mo-Fr" },
+    { line: "268", dest: "Bühl Bahnhof/ZOB", via: VIA_268_BUEHL_STANDARD, time: "09:45", tage: "Mo-Fr" },
+    { line: "268", dest: "Bühl Bahnhof/ZOB", via: VIA_268_BUEHL_STANDARD, time: "10:45", tage: "Mo-Fr" },
+    { line: "268", dest: "Bühl Bahnhof/ZOB", via: VIA_268_BUEHL_STANDARD, time: "11:45", tage: "Mo-Fr" },
+    { line: "268", dest: "Bühl Bahnhof/ZOB", via: VIA_268_BUEHL_STANDARD, time: "12:45", tage: "Mo-Fr" },
+    { line: "268", dest: "Schwarzach Bahnhof", time: "12:50", tage: "Mo-Fr" },
+    { line: "268", dest: "Schwarzach Bahnhof", time: "13:44", tage: "Mo-Fr" },
+    { line: "268", dest: "Bühl Bahnhof/ZOB", via: VIA_268_BUEHL_STANDARD, time: "13:45", tage: "Mo-Fr" },
+    { line: "268", dest: "Bühl Bahnhof/ZOB", via: VIA_268_BUEHL_STANDARD, time: "14:45", tage: "Mo-Fr" },
+    { line: "268", dest: "Bühl Bahnhof/ZOB", via: VIA_268_BUEHL_STANDARD, time: "15:45", tage: "Mo-Fr" },
+    { line: "268", dest: "Schwarzach Bahnhof", time: "16:00", tage: "Mo-Fr" },
+    { line: "268", dest: "Bühl Bahnhof/ZOB", via: VIA_268_BUEHL_STANDARD, time: "16:45", tage: "Mo-Fr" },
+    { line: "268", dest: "Bühl Bahnhof/ZOB", via: VIA_268_BUEHL_STANDARD, time: "17:05", tage: "Mo-Fr" },
+    { line: "268", dest: "Bühl Bahnhof/ZOB", via: VIA_268_BUEHL_STANDARD, time: "17:45", tage: "Mo-Fr" },
+    { line: "268", dest: "Bühl Bahnhof/ZOB", via: VIA_268_BUEHL_STANDARD, time: "18:05", tage: "Mo-Fr" },
+    { line: "268", dest: "Bühl Bahnhof/ZOB", via: VIA_268_BUEHL_STANDARD, time: "18:45", tage: "Mo-Fr" },
+    { line: "268", dest: "Schwarzach Bahnhof", time: "19:39", tage: "Mo-Fr" },
+
+    { line: "268", dest: "Freistett Busbahnhof", via: VIA_268_FREISTETT_0519, time: "05:19", tage: "Mo-Fr" },
+    { line: "268", dest: "Freistett Busbahnhof", via: VIA_268_FREISTETT_0544, time: "05:44", tage: "Mo-Fr" },
+    { line: "268", dest: "Rheinbischofsheim Gymnasium", via: VIA_268_FREISTETT_0708_0745, time: "07:08", tage: "Mo-Fr" },
+    { line: "268", dest: "Rheinbischofsheim Gymnasium", via: VIA_268_FREISTETT_0708_0745, time: "07:45", tage: "Mo-Fr" },
+    { line: "268", dest: "Lichtenau Sommerfeldstraße", via: VIA_268_LICHTENAU_SOMMERFELD, time: "08:10", tage: "Mo-Fr" },
+    { line: "268", dest: "Freistett Busbahnhof", via: VIA_268_FREISTETT_STANDARD, time: "08:50", tage: "Mo-Fr" },
+    { line: "268", dest: "Freistett Busbahnhof", via: VIA_268_FREISTETT_STANDARD, time: "09:50", tage: "Mo-Fr" },
+    { line: "268", dest: "Freistett Busbahnhof", via: VIA_268_FREISTETT_STANDARD, time: "10:50", tage: "Mo-Fr" },
+    { line: "268", dest: "Freistett Busbahnhof", via: VIA_268_FREISTETT_STANDARD, time: "11:50", tage: "Mo-Fr" },
+    { line: "268", dest: "Freistett Busbahnhof", via: VIA_268_FREISTETT_STANDARD, time: "12:50", tage: "Mo-Fr" },
+    { line: "268", dest: "Freistett Busbahnhof", via: VIA_268_FREISTETT_STANDARD, time: "13:50", tage: "Mo-Fr" },
+    { line: "268", dest: "Freistett Busbahnhof", via: VIA_268_FREISTETT_STANDARD, time: "14:50", tage: "Mo-Fr" },
+    { line: "268", dest: "Freistett Busbahnhof", via: VIA_268_FREISTETT_STANDARD, time: "15:50", tage: "Mo-Fr" },
+    { line: "268", dest: "Lichtenau Sommerfeldstraße", via: VIA_268_LICHTENAU_SOMMERFELD, time: "16:10", tage: "Mo-Fr" },
+    { line: "268", dest: "Freistett Busbahnhof", via: VIA_268_FREISTETT_STANDARD, time: "16:50", tage: "Mo-Fr" },
+    { line: "268", dest: "Freistett Busbahnhof", via: VIA_268_FREISTETT_STANDARD, time: "17:10", tage: "Mo-Fr" },
+    { line: "268", dest: "Freistett Busbahnhof", via: VIA_268_FREISTETT_STANDARD, time: "17:50", tage: "Mo-Fr" },
+    { line: "268", dest: "Lichtenau Sommerfeldstraße", via: VIA_268_LICHTENAU_SOMMERFELD, time: "18:10", tage: "Mo-Fr" },
+    { line: "268", dest: "Freistett Busbahnhof", via: VIA_268_FREISTETT_STANDARD, time: "18:50", tage: "Mo-Fr" },
+    { line: "268", dest: "Lichtenau Sommerfeldstraße", via: VIA_268_LICHTENAU_SOMMERFELD, time: "19:10", tage: "Mo-Fr" },
+    { line: "268", dest: "Freistett Busbahnhof", via: VIA_268_FREISTETT_STANDARD, time: "19:50", tage: "Mo-Fr" },
+
+    { line: "268s", dest: "Bühl Bahnhof ZOB", via: VIA_268S_0635, time: "06:35", tage: "Mo-Fr" },
+    { line: "268s", dest: "Bühl Gymnasium", via: VIA_268S_0705, time: "07:05", tage: "Mo-Fr" },
+    { line: "268s", dest: "Muckenschopf", via: VIA_268S_1150, time: "11:50", tage: "Mo-Fr" },
+    { line: "268s", dest: "Muckenschopf", via: VIA_268S_1224_1334, time: "12:24", tage: "Mo-Fr" },
+    { line: "268s", dest: "Lichtenau Sommerfeldstraße", via: VIA_268_LICHTENAU_SOMMERFELD, time: "12:42", tage: "Mo-Fr" },
+    { line: "268s", dest: "Lichtenau Sommerfeldstraße", via: VIA_268_LICHTENAU_SOMMERFELD, time: "12:46", tage: "Mo-Fr" },
+    { line: "268s", dest: "Muckenschopf", via: VIA_268S_1224_1334, time: "13:34", tage: "Mo-Fr" },
+    { line: "268s", dest: "Freistett Busbahnhof", via: VIA_268_FREISTETT_STANDARD, time: "13:53", tage: "Mo-Fr" },
+
+    // --- SAMSTAG ---
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "06:00", tage: "Sa" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "07:05", tage: "Sa" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "08:10", tage: "Sa" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "09:10", tage: "Sa" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "10:10", tage: "Sa" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "11:10", tage: "Sa" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "12:10", tage: "Sa" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "13:10", tage: "Sa" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "14:10", tage: "Sa" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "15:10", tage: "Sa" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "16:10", tage: "Sa" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "17:10", tage: "Sa" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "18:10", tage: "Sa" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "19:10", tage: "Sa" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "20:10", tage: "Sa" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "21:10", tage: "Sa" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "22:10", tage: "Sa" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "23:12", tage: "Sa" },
+
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "05:30", tage: "Sa" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "06:42", tage: "Sa" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "07:38", tage: "Sa" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "08:42", tage: "Sa" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "09:42", tage: "Sa" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "10:42", tage: "Sa" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "11:42", tage: "Sa" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "12:42", tage: "Sa" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "13:42", tage: "Sa" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "14:42", tage: "Sa" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "15:42", tage: "Sa" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "16:42", tage: "Sa" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "17:42", tage: "Sa" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "18:42", tage: "Sa" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "19:42", tage: "Sa" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "20:42", tage: "Sa" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "21:42", tage: "Sa" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "22:42", tage: "Sa" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "23:42", tage: "Sa" },
+
+    { line: "268", dest: "Bühl Bahnhof/ZOB", via: VIA_268_BUEHL_STANDARD, time: "06:45", tage: "Sa" },
+    { line: "268", dest: "Bühl Bahnhof/ZOB", via: VIA_268_BUEHL_STANDARD, time: "07:40", tage: "Sa" },
+    { line: "268", dest: "Bühl Bahnhof/ZOB", via: VIA_268_BUEHL_STANDARD, time: "08:45", tage: "Sa" },
+    { line: "268", dest: "Bühl Bahnhof/ZOB", via: VIA_268_BUEHL_STANDARD, time: "09:45", tage: "Sa" },
+    { line: "268", dest: "Bühl Bahnhof/ZOB", via: VIA_268_BUEHL_STANDARD, time: "10:45", tage: "Sa" },
+    { line: "268", dest: "Bühl Bahnhof/ZOB", via: VIA_268_BUEHL_STANDARD, time: "11:45", tage: "Sa" },
+    { line: "268", dest: "Bühl Bahnhof/ZOB", via: VIA_268_BUEHL_STANDARD, time: "12:45", tage: "Sa" },
+    { line: "268", dest: "Bühl Bahnhof/ZOB", via: VIA_268_BUEHL_STANDARD, time: "13:45", tage: "Sa" },
+    { line: "268", dest: "Bühl Bahnhof/ZOB", via: VIA_268_BUEHL_STANDARD, time: "14:45", tage: "Sa" },
+    { line: "268", dest: "Bühl Bahnhof/ZOB", via: VIA_268_BUEHL_STANDARD, time: "15:45", tage: "Sa" },
+    { line: "268", dest: "Bühl Bahnhof/ZOB", via: VIA_268_BUEHL_STANDARD, time: "16:45", tage: "Sa" },
+    { line: "268", dest: "Bühl Bahnhof/ZOB", via: VIA_268_BUEHL_STANDARD, time: "17:45", tage: "Sa" },
+    { line: "268", dest: "Schwarzach Bahnhof", time: "18:45", tage: "Sa" },
+
+    { line: "268", dest: "Freistett Busbahnhof", via: VIA_268_FREISTETT_STANDARD, time: "06:45", tage: "Sa" },
+    { line: "268", dest: "Freistett Busbahnhof", via: VIA_268_FREISTETT_STANDARD, time: "07:50", tage: "Sa" },
+    { line: "268", dest: "Freistett Busbahnhof", via: VIA_268_FREISTETT_STANDARD, time: "08:50", tage: "Sa" },
+    { line: "268", dest: "Freistett Busbahnhof", via: VIA_268_FREISTETT_STANDARD, time: "09:50", tage: "Sa" },
+    { line: "268", dest: "Freistett Busbahnhof", via: VIA_268_FREISTETT_STANDARD, time: "10:50", tage: "Sa" },
+    { line: "268", dest: "Freistett Busbahnhof", via: VIA_268_FREISTETT_STANDARD, time: "11:50", tage: "Sa" },
+    { line: "268", dest: "Freistett Busbahnhof", via: VIA_268_FREISTETT_STANDARD, time: "12:50", tage: "Sa" },
+    { line: "268", dest: "Freistett Busbahnhof", via: VIA_268_FREISTETT_STANDARD, time: "13:50", tage: "Sa" },
+    { line: "268", dest: "Freistett Busbahnhof", via: VIA_268_FREISTETT_STANDARD, time: "14:50", tage: "Sa" },
+    { line: "268", dest: "Freistett Busbahnhof", via: VIA_268_FREISTETT_STANDARD, time: "15:50", tage: "Sa" },
+    { line: "268", dest: "Freistett Busbahnhof", via: VIA_268_FREISTETT_STANDARD, time: "16:50", tage: "Sa" },
+    { line: "268", dest: "Freistett Busbahnhof", via: VIA_268_FREISTETT_STANDARD, time: "17:50", tage: "Sa" },
+    { line: "268", dest: "Freistett Busbahnhof", via: VIA_268_FREISTETT_STANDARD, time: "18:50", tage: "Sa" },
+
+    // --- SONN- UND FEIERTAG ---
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "07:05", tage: "So" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "08:10", tage: "So" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "09:10", tage: "So" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "10:10", tage: "So" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "11:10", tage: "So" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "12:10", tage: "So" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "13:10", tage: "So" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "14:10", tage: "So" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "15:10", tage: "So" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "16:10", tage: "So" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "17:10", tage: "So" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "18:10", tage: "So" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "19:10", tage: "So" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "20:10", tage: "So" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "21:10", tage: "So" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "22:10", tage: "So" },
+    { line: "X34", dest: "Bühl Bahnhof/ZOB", via: VIA_X34_BUEHL, time: "23:12", tage: "So" },
+
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "05:30", tage: "So" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "06:42", tage: "So" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "07:38", tage: "So" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "08:42", tage: "So" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "09:42", tage: "So" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "10:42", tage: "So" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "11:42", tage: "So" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "12:42", tage: "So" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "13:42", tage: "So" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "14:42", tage: "So" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "15:42", tage: "So" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "16:42", tage: "So" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "17:42", tage: "So" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "18:42", tage: "So" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "19:42", tage: "So" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "20:42", tage: "So" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "21:42", tage: "So" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "22:42", tage: "So" },
+    { line: "X34", dest: "Rastatt Bahnhof", via: VIA_X34_RASTATT, time: "23:42", tage: "So" }
+];
+
+// Entfernt das Ziel automatisch aus der Via-Liste, falls es am Ende steht
+function cleanVia(viaString, destString) {
+    if (!viaString) return "";
+    var stops = viaString.split(" – ");
+    if (stops.length > 0 && stops[stops.length - 1].trim() === destString.trim()) {
+        stops.pop();
+    }
+    return stops.join(" – ");
+}
+
+function updateMonitor() {
+    var now = new Date();
+    
+    var hours = zeroPad(now.getHours());
+    var minutes = zeroPad(now.getMinutes());
+    var seconds = zeroPad(now.getSeconds());
+    document.getElementById('clock').innerHTML = hours + ":" + minutes + ":" + seconds;
+    
+    var dayOfWeek = now.getDay();
+    var currentTagGroup = "Mo-Fr";
+    if (dayOfWeek === 6) {
+        currentTagGroup = "Sa";
+    } else if (dayOfWeek === 0) {
+        currentTagGroup = "So";
+    }
+    
+    var currentMinutesFromMidnight = (now.getHours() * 60) + now.getMinutes();
+    
+    var upcoming = [];
+    for (var i = 0; i < timetable.length; i++) {
+        var entry = timetable[i];
+        
+        if (entry.tage === currentTagGroup) {
+            var parts = entry.time.split(":");
+            var entryMinutes = (parseInt(parts[0], 10) * 60) + parseInt(parts[1], 10);
+            
+            if (entryMinutes >= currentMinutesFromMidnight) {
+                var diff = entryMinutes - currentMinutesFromMidnight;
+                
+                var displayCountdown = "";
+                var displayAbsolute = entry.time + " Uhr";
+
+                // Anpassung: Bei über 30 Minuten die feste Uhrzeit als Hauptanzeige nutzen
+                if (diff > 30) {
+                    displayCountdown = entry.time + " Uhr";
+                    displayAbsolute = ""; // Kein zweiter Text nötig
+                } else if (diff === 0) {
+                    displayCountdown = "sofort";
+                } else {
+                    displayCountdown = "in " + diff + " Min";
+                }
+                
+                var cleanedVia = cleanVia(entry.via, entry.dest);
+
+                upcoming.push({
+                    line: entry.line,
+                    dest: entry.dest,
+                    via: cleanedVia,
+                    displayTime: displayCountdown,
+                    absoluteTime: displayAbsolute,
+                    rawMinutes: entryMinutes
+                });
+            }
+        }
+    }
+    
+    upcoming.sort(function(a, b) {
+        return a.rawMinutes - b.rawMinutes;
+    });
+    
+    var nextDepartures = upcoming.slice(0, 6);
+    var tbody = document.getElementById('departure-table');
+    tbody.innerHTML = '';
+    
+    if (nextDepartures.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" class="no-data">Keine weiteren Abfahrten heute.</td></tr>';
+    } else {
+        for (var j = 0; j < nextDepartures.length; j++) {
+            var dep = nextDepartures[j];
+            var viaHtml = dep.via ? '<div class="via">über ' + dep.via + '</div>' : '';
+            var absoluteHtml = dep.absoluteTime ? '<div class="time-absolute">' + dep.absoluteTime + '</div>' : '';
+            
+            var row = '<tr>' +
+                '<td><span class="line-badge">' + dep.line + '</span></td>' +
+                '<td><div class="destination">' + dep.dest + '</div>' + viaHtml + '</td>' +
+                '<td><div class="countdown">' + dep.displayTime + '</div>' + absoluteHtml + '</td>' +
+                '</tr>';
+            tbody.innerHTML += row;
+        }
+    }
+}
+
+updateMonitor();
+setInterval(updateMonitor, 1000);
+</script>
+
+</body>
+</html>
